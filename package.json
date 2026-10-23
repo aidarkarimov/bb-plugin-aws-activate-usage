@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-aws-activate-usage",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Show AWS promotional credit balances, usage, and expiration dates inside BB.",
   "license": "MIT",
   "author": {

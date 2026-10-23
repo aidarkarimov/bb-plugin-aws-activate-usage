@@ -1,11 +1,11 @@
-Keep the official AWS Activate balance visible while you work in BB.
+Keep the official AWS promotional-credit balance visible while you work in BB.
 
 ## What you get
 
 - An **AWS credits** page with the estimated balance, amount used, expiration dates, and each active promotional credit.
 - A compact footer card so the balance is one click away from every thread.
 - Current-month credit allocation totals straight from AWS Billing.
-- A safe reconnect button that opens the existing official AWS login helper.
+- A reconnect button for AWS SSO or an executable authentication helper selected by the user.
 - A cached last-known balance when an AWS session expires.
 
 ## Security

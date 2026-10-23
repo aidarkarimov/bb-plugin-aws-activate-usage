@@ -11,13 +11,6 @@ const usd = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 2,
 });
 
-const compactUsd = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  notation: "compact",
-  maximumFractionDigits: 1,
-});
-
 function formatDate(value: string | null): string {
   if (value === null) return "No expiration date";
   const date = new Date(value);
@@ -31,12 +24,18 @@ function formatDate(value: string | null): string {
 
 function formatUpdated(value: string): string {
   const date = new Date(value);
-  return new Intl.DateTimeFormat("en-CA", {
-    month: "short",
-    day: "numeric",
+  const now = new Date();
+  const sameDay = date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate();
+  const day = sameDay
+    ? "Today"
+    : new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric" }).format(date);
+  const time = new Intl.DateTimeFormat("en-CA", {
     hour: "numeric",
     minute: "2-digit",
   }).format(date);
+  return `${day}, ${time}`;
 }
 
 function readableService(value: string): string {
@@ -108,7 +107,7 @@ function ProgressBar({ usedPercent }: { usedPercent: number }) {
   const remainingPercent = Math.max(0, Math.min(100, 100 - usedPercent));
   return (
     <div
-      className="h-2 overflow-hidden rounded-full bg-muted"
+      className="h-2 overflow-hidden rounded-full bg-muted-foreground/20"
       role="progressbar"
       aria-label="AWS credits remaining"
       aria-valuemin={0}
@@ -116,7 +115,7 @@ function ProgressBar({ usedPercent }: { usedPercent: number }) {
       aria-valuenow={Math.round(remainingPercent)}
     >
       <div
-        className="h-full rounded-full bg-emerald-500 transition-[width] duration-300"
+        className="h-full rounded-full bg-amber-400 transition-[width] duration-300 motion-reduce:transition-none"
         style={{ width: `${remainingPercent}%` }}
       />
     </div>
@@ -134,7 +133,7 @@ function LoadingBox() {
 
 function Warning({ children }: { children: string }) {
   return (
-    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-foreground">
       {children}
     </div>
   );
@@ -155,39 +154,63 @@ function ErrorBox({ error, onReconnect }: { error: string; onReconnect: () => vo
   );
 }
 
-function BalanceSummary({ summary, compact = false }: { summary: AwsCreditsSummary; compact?: boolean }) {
+function SummaryHeader({ summary, compact = false }: { summary: AwsCreditsSummary; compact?: boolean }) {
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      <span className={`${compact ? "size-11 rounded-2xl" : "size-14 rounded-[1.25rem]"} flex shrink-0 items-center justify-center bg-amber-300 text-slate-950 shadow-[0_10px_30px_-14px_rgba(245,158,11,0.8)]`}>
+        <Icon name="Cloud" className={compact ? "size-5" : "size-6"} />
+      </span>
+      <div className="min-w-0">
+        <h1 className={`${compact ? "text-lg" : "text-2xl"} truncate font-bold tracking-tight`}>AWS Activate</h1>
+        <p className={`${compact ? "text-xs" : "text-sm"} truncate font-medium text-muted-foreground`}>
+          Account {maskedAccount(summary.accountId)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function CreditHero({ summary, compact = false }: { summary: AwsCreditsSummary; compact?: boolean }) {
+  return (
+    <section className={`${compact ? "space-y-4 rounded-[1.5rem] p-4" : "space-y-6 rounded-[2rem] p-6"} min-w-0 border border-border/60 bg-muted/70 text-foreground`}>
+      <div className="min-w-0">
+        <p className={`${compact ? "text-[11px]" : "text-xs"} font-semibold uppercase tracking-[0.14em] text-muted-foreground`}>
+          Estimated AWS credits
+        </p>
+        <p
+          className="mt-2 break-words font-semibold leading-none tracking-[-0.04em] tabular-nums"
+          style={{ fontSize: compact ? "clamp(2rem, 14cqi, 3.25rem)" : "clamp(2.5rem, 11cqi, 4.75rem)" }}
+        >
+          {usd.format(summary.estimated)}
+        </p>
+      </div>
+      <div className="space-y-3">
+        <ProgressBar usedPercent={summary.usedPercent} />
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs font-semibold text-muted-foreground">
+          <span className="tabular-nums">{usd.format(summary.used)} used</span>
+          <span className="tabular-nums">of {usd.format(summary.initial)}</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ExpiryCard({ summary, compact = false }: { summary: AwsCreditsSummary; compact?: boolean }) {
   const primary = useMemo(
     () => summary.credits.find((credit) => credit.id === summary.primaryCreditId) ?? null,
     [summary],
   );
+  if (primary?.expiresAt === null || primary?.expiresAt === undefined) return null;
   return (
-    <div className="space-y-3">
-      <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Estimated AWS credits
-        </p>
-        <p className={compact ? "mt-1 text-2xl font-semibold tabular-nums" : "mt-1 text-4xl font-semibold tabular-nums"}>
-          {usd.format(summary.estimated)}
-        </p>
+    <section className={`${compact ? "rounded-2xl p-3.5" : "rounded-[1.5rem] p-4"} flex min-w-0 items-center gap-3 border border-border/70 bg-muted/60`}>
+      <span className={`${compact ? "size-10" : "size-12"} flex shrink-0 items-center justify-center rounded-full bg-background/80 text-amber-500`}>
+        <Icon name="Zap" className={compact ? "size-5" : "size-6"} />
+      </span>
+      <div className="min-w-0">
+        <p className={`${compact ? "text-xs" : "text-sm"} font-medium text-muted-foreground`}>Main Activate credit expires</p>
+        <p className={`${compact ? "text-base" : "text-lg"} font-semibold tabular-nums`}>{formatDate(primary.expiresAt)}</p>
       </div>
-      <ProgressBar usedPercent={summary.usedPercent} />
-      <div className="grid grid-cols-2 gap-3 text-sm">
-        <div>
-          <p className="text-xs text-muted-foreground">Used</p>
-          <p className="font-medium tabular-nums">{usd.format(summary.used)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground">Initial total</p>
-          <p className="font-medium tabular-nums">{usd.format(summary.initial)}</p>
-        </div>
-      </div>
-      {primary?.expiresAt ? (
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Icon name="CalendarClock" className="size-3.5" />
-          Main Activate credit expires {formatDate(primary.expiresAt)}
-        </p>
-      ) : null}
-    </div>
+    </section>
   );
 }
 
@@ -201,15 +224,62 @@ function ActionRow({
   onReconnect: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Button size="sm" onClick={onRefresh} disabled={loading}>
+    <div
+      className="grid min-w-0 gap-2"
+      style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 9rem), 1fr))" }}
+    >
+      <Button
+        className="h-11 min-w-0 rounded-2xl bg-amber-300 px-4 text-sm font-semibold text-slate-950 shadow-[0_10px_24px_-16px_rgba(245,158,11,0.9)] hover:bg-amber-200 focus-visible:ring-2 focus-visible:ring-amber-400"
+        onClick={onRefresh}
+        disabled={loading}
+      >
         <Icon name={loading ? "LoaderCircle" : "RefreshCw"} className={loading ? "size-4 animate-spin" : "size-4"} />
-        Refresh
+        Refresh balance
       </Button>
-      <Button size="sm" variant="outline" onClick={onReconnect}>
-        <Icon name="LogIn" className="size-4" />
-        Reconnect AWS
+      <Button
+        className="h-11 min-w-0 rounded-2xl border-0 bg-muted px-4 text-sm font-semibold text-foreground hover:bg-muted/80 focus-visible:ring-2 focus-visible:ring-ring"
+        variant="secondary"
+        onClick={onReconnect}
+      >
+        <Icon name="Link" className="size-4" />
+        Reconnect
       </Button>
+    </div>
+  );
+}
+
+function UpdatedLine({ summary }: { summary: AwsCreditsSummary }) {
+  return (
+    <p className="text-center text-[11px] font-medium text-muted-foreground">
+      Updated {formatUpdated(summary.fetchedAt)} <span aria-hidden="true">·</span> AWS estimates update daily
+    </p>
+  );
+}
+
+function CreditOverview({
+  summary,
+  compact = false,
+  loading,
+  message,
+  onRefresh,
+  onReconnect,
+}: {
+  summary: AwsCreditsSummary;
+  compact?: boolean;
+  loading: boolean;
+  message: string | null;
+  onRefresh: () => void;
+  onReconnect: () => void;
+}) {
+  return (
+    <div className={compact ? "min-w-0 space-y-3" : "min-w-0 space-y-4"}>
+      <SummaryHeader summary={summary} compact={compact} />
+      <CreditHero summary={summary} compact={compact} />
+      <ExpiryCard summary={summary} compact={compact} />
+      {summary.warning ? <Warning>{summary.warning}</Warning> : null}
+      {message ? <p className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs">{message}</p> : null}
+      <ActionRow loading={loading} onRefresh={onRefresh} onReconnect={onReconnect} />
+      <UpdatedLine summary={summary} />
     </div>
   );
 }
@@ -217,35 +287,21 @@ function ActionRow({
 function FooterCredits() {
   const { summary, error, loading, message, load, reconnect } = useCredits();
   return (
-    <div className="w-[min(22rem,calc(100vw-1.5rem))] space-y-3 p-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400">
-            <Icon name="Cloud" className="size-4" />
-          </span>
-          <div>
-            <p className="text-sm font-semibold">AWS Activate</p>
-            <p className="text-xs text-muted-foreground">
-              {summary ? `Account ${maskedAccount(summary.accountId)}` : "AWS promotional credits"}
-            </p>
-          </div>
-        </div>
-        {summary ? (
-          <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-            {compactUsd.format(summary.estimated)} left
-          </span>
-        ) : null}
-      </div>
+    <div
+      className="w-full min-w-0 max-w-full overflow-hidden bg-background p-3 text-foreground"
+      style={{ containerType: "inline-size" }}
+    >
       {summary === null && loading ? <LoadingBox /> : null}
       {summary === null && error !== null ? <ErrorBox error={error} onReconnect={() => void reconnect()} /> : null}
-      {summary !== null ? <BalanceSummary summary={summary} compact /> : null}
-      {summary?.warning ? <Warning>{summary.warning}</Warning> : null}
-      {message ? <p className="text-xs text-muted-foreground">{message}</p> : null}
-      <ActionRow loading={loading} onRefresh={() => void load(true)} onReconnect={() => void reconnect()} />
-      {summary ? (
-        <p className="text-[11px] text-muted-foreground">
-          Updated {formatUpdated(summary.fetchedAt)} · AWS estimates update daily
-        </p>
+      {summary !== null ? (
+        <CreditOverview
+          summary={summary}
+          compact
+          loading={loading}
+          message={message}
+          onRefresh={() => void load(true)}
+          onReconnect={() => void reconnect()}
+        />
       ) : null}
     </div>
   );
@@ -254,38 +310,28 @@ function FooterCredits() {
 function CreditsPage() {
   const { summary, error, loading, message, load, reconnect } = useCredits();
   return (
-    <div className="h-full min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto box-border w-full max-w-4xl space-y-5 px-4 pb-8 pt-4 md:px-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">AWS Activate credits</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Official balances from AWS Billing. Credentials stay in your local AWS profile.
-            </p>
-          </div>
-          <ActionRow loading={loading} onRefresh={() => void load(true)} onReconnect={() => void reconnect()} />
-        </div>
-
-        {message ? <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">{message}</p> : null}
+    <div
+      className="h-full min-h-0 min-w-0 flex-1 overflow-y-auto"
+      style={{ containerType: "inline-size" }}
+    >
+      <div className="mx-auto box-border w-full max-w-4xl space-y-4 px-3 pb-8 pt-4">
         {summary === null && loading ? <LoadingBox /> : null}
         {summary === null && error !== null ? <ErrorBox error={error} onReconnect={() => void reconnect()} /> : null}
 
         {summary !== null ? (
           <>
-            {summary.warning ? <Warning>{summary.warning}</Warning> : null}
-            <div className="grid gap-4 md:grid-cols-[1.35fr_1fr]">
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Icon name="WalletCards" className="size-5 text-amber-500" />
-                    Credit balance
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <BalanceSummary summary={summary} />
-                </CardContent>
-              </Card>
-              <Card>
+            <CreditOverview
+              summary={summary}
+              loading={loading}
+              message={message}
+              onRefresh={() => void load(true)}
+              onReconnect={() => void reconnect()}
+            />
+            <div
+              className="grid min-w-0 gap-3"
+              style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 17rem), 1fr))" }}
+            >
+              <Card className="rounded-2xl border-border/70 shadow-sm">
                 <CardHeader className="pb-3">
                   <CardTitle className="flex items-center gap-2 text-base">
                     <Icon name="ChartColumn" className="size-5 text-sky-500" />
@@ -293,7 +339,12 @@ function CreditsPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <p className="text-3xl font-semibold tabular-nums">{usd.format(summary.monthUsed)}</p>
+                  <p
+                    className="break-words font-semibold leading-none tabular-nums"
+                    style={{ fontSize: "clamp(1.5rem, 9cqi, 1.875rem)" }}
+                  >
+                    {usd.format(summary.monthUsed)}
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     Credits applied in {summary.month}{summary.allocationIsEstimated ? " · estimated bill" : ""}
                   </p>
@@ -304,18 +355,18 @@ function CreditsPage() {
               </Card>
             </div>
 
-            <Card>
+            <Card className="rounded-2xl border-border/70 shadow-sm">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Active credits</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 {summary.credits.map((credit) => (
-                  <div key={credit.id} className="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{credit.description}</p>
+                  <div key={credit.id} className="flex min-w-0 flex-wrap items-start justify-between gap-2 rounded-lg border border-border p-3">
+                    <div className="min-w-0 flex-[1_1_14rem]">
+                      <p className="break-words text-sm font-medium">{credit.description}</p>
                       <p className="mt-0.5 text-xs text-muted-foreground">Expires {formatDate(credit.expiresAt)}</p>
                     </div>
-                    <div className="shrink-0 text-left sm:text-right">
+                    <div className="min-w-0 flex-[0_1_auto] text-right">
                       <p className="text-sm font-semibold tabular-nums">{usd.format(credit.estimated)}</p>
                       <p className="text-xs text-muted-foreground">of {usd.format(credit.initial)}</p>
                     </div>
@@ -325,7 +376,7 @@ function CreditsPage() {
             </Card>
 
             {summary.serviceUsage.length > 0 ? (
-              <Card>
+              <Card className="rounded-2xl border-border/70 shadow-sm">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">Where credits were applied this month</CardTitle>
                 </CardHeader>
@@ -343,7 +394,7 @@ function CreditsPage() {
               </Card>
             ) : null}
 
-            <p className="text-xs text-muted-foreground">
+            <p className="break-words text-xs text-muted-foreground">
               Profile {summary.profile} · account {summary.accountId} · updated {formatUpdated(summary.fetchedAt)}
               {summary.stale ? " · cached result" : ""}
             </p>
