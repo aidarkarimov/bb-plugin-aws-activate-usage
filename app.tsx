@@ -319,6 +319,9 @@ function CompactFooterRow({
       : `${Math.round(remainingPercent)}%`;
   const status = [
     `${usd.format(summary.estimated)} available`,
+    summary.todayUsed === null
+      ? "Today's spend unavailable"
+      : `${usd.format(summary.todayUsed)} spent today${summary.todayIsEstimated ? " (estimated)" : ""}`,
     `${usd.format(summary.used)} used of ${usd.format(summary.initial)}`,
     `${Math.round(remainingPercent)}% left`,
     `Updated ${formatUpdated(summary.fetchedAt)}`,
@@ -336,9 +339,12 @@ function CompactFooterRow({
     >
       <Icon name="Cloud" aria-hidden="true" className="mx-1 size-3.5 shrink-0 text-amber-500" />
       <span className="shrink-0 text-2xs font-medium">AWS</span>
-      <span className="min-w-0 flex-1 truncate text-xs font-semibold tabular-nums">
-        {usd.format(summary.estimated)}
-      </span>
+      <div className="flex min-w-0 flex-1 items-baseline gap-1 tabular-nums">
+        <span className="shrink-0 text-xs font-semibold">{usd.format(summary.estimated)}</span>
+        <span className="min-w-0 truncate text-2xs font-normal text-muted-foreground">
+          ({summary.todayUsed === null ? "—" : usd.format(summary.todayUsed)} today)
+        </span>
+      </div>
       <span
         className={`shrink-0 text-2xs tabular-nums ${error !== null ? "text-destructive" : "text-muted-foreground"}`}
         aria-live="polite"

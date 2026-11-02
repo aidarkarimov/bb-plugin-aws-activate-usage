@@ -44,6 +44,16 @@ const rawAllocationResponseSchema = z.object({
   failedMonths: z.array(z.string()).optional(),
 });
 
+const rawDailyCostResponseSchema = z.object({
+  ResultsByTime: z.array(z.object({
+    Total: z.record(z.string(), z.object({
+      Amount: z.string(),
+      Unit: z.string(),
+    })),
+    Estimated: z.boolean(),
+  })),
+});
+
 const callerIdentitySchema = z.object({
   Account: z.string().regex(/^\d{12}$/),
 });
@@ -75,6 +85,8 @@ export const summarySchema = z.object({
   estimated: z.number(),
   used: z.number(),
   usedPercent: z.number(),
+  todayUsed: z.number().nullable().default(null),
+  todayIsEstimated: z.boolean().default(true),
   monthUsed: z.number(),
   month: z.string(),
   allocationIsEstimated: z.boolean(),
@@ -112,6 +124,13 @@ function isoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+function localDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function friendlyAwsError(cause: unknown): string {
   const raw = cause instanceof Error ? cause.message : String(cause);
   const lower = raw.toLowerCase();
@@ -124,7 +143,7 @@ function friendlyAwsError(cause: unknown): string {
     return "AWS session expired. Reconnect AWS, confirm the official login in your browser, then refresh.";
   }
   if (lower.includes("accessdenied") || lower.includes("not authorized")) {
-    return "AWS connected, but this profile cannot read Billing credits. It needs billing:GetCredits, billing:GetCreditAllocationHistory, and aws-portal:ViewBilling.";
+    return "AWS connected, but this profile cannot read all usage data. It needs billing:GetCredits, billing:GetCreditAllocationHistory, ce:GetCostAndUsage, and aws-portal:ViewBilling.";
   }
   const lines = raw.split("\n").map((line) => line.trim()).filter(Boolean);
   return lines.at(-1) ?? "AWS request failed.";
@@ -281,6 +300,46 @@ export default async function plugin(bb: BbPluginApi) {
       allocationWarning = `Credit balance loaded, but the monthly breakdown is unavailable: ${friendlyAwsError(cause)}`;
     }
 
+    let todayUsed: number | null = null;
+    let todayIsEstimated = true;
+    let dailyCostWarning: string | null = null;
+    try {
+      const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      const dailyCost = rawDailyCostResponseSchema.parse(
+        await awsJson([
+          "ce",
+          "get-cost-and-usage",
+          "--time-period",
+          `Start=${localDate(now)},End=${localDate(tomorrow)}`,
+          "--granularity",
+          "DAILY",
+          "--metrics",
+          "UnblendedCost",
+          "--filter",
+          JSON.stringify({
+            Dimensions: {
+              Key: "RECORD_TYPE",
+              Values: [
+                "Usage",
+                "DiscountedUsage",
+                "Fee",
+                "RIFee",
+                "SavingsPlanCoveredUsage",
+                "SavingsPlanRecurringFee",
+                "SavingsPlanUpfrontFee",
+              ],
+            },
+          }),
+        ]),
+      );
+      const result = dailyCost.ResultsByTime[0];
+      const parsedToday = Number(result?.Total.UnblendedCost?.Amount ?? "0");
+      todayUsed = Number.isFinite(parsedToday) ? Math.max(0, parsedToday) : null;
+      todayIsEstimated = result?.Estimated ?? true;
+    } catch (cause) {
+      dailyCostWarning = `Today's estimated spend is unavailable: ${friendlyAwsError(cause)}`;
+    }
+
     const serviceTotals = new Map<string, number>();
     let monthUsed = 0;
     let allocationIsEstimated = false;
@@ -309,6 +368,8 @@ export default async function plugin(bb: BbPluginApi) {
       estimated,
       used,
       usedPercent: initial > 0 ? (used / initial) * 100 : 0,
+      todayUsed,
+      todayIsEstimated,
       monthUsed,
       month,
       allocationIsEstimated,
@@ -320,7 +381,7 @@ export default async function plugin(bb: BbPluginApi) {
       primaryCreditId: primary?.id ?? null,
       fetchedAt: now.toISOString(),
       stale: false,
-      warning: allocationWarning,
+      warning: [allocationWarning, dailyCostWarning].filter(Boolean).join(" ") || null,
     };
 
     await bb.storage.kv.set(CACHE_KEY, summary);
@@ -403,6 +464,7 @@ export default async function plugin(bb: BbPluginApi) {
     return [
       `Estimated AWS credits: ${usd.format(summary.estimated)}`,
       `Used: ${usd.format(summary.used)} of ${usd.format(summary.initial)}`,
+      `Today: ${summary.todayUsed === null ? "unavailable" : usd.format(summary.todayUsed)}${summary.todayIsEstimated ? " (estimated)" : ""}`,
       `This month: ${usd.format(summary.monthUsed)}${summary.allocationIsEstimated ? " (estimated)" : ""}`,
       primary?.expiresAt ? `Primary Activate credit expires: ${primary.expiresAt}` : null,
       summary.stale ? `Warning: ${summary.warning ?? "Showing cached data."}` : null,

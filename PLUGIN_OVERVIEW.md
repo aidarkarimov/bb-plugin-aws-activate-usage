@@ -5,6 +5,7 @@ Keep the official AWS promotional-credit balance visible while you work in BB.
 - An **AWS credits** page with the estimated balance, amount used, expiration dates, and each active promotional credit.
 - A one-row compact footer or a detailed large-balance card, selectable in plugin settings.
 - Current-month credit allocation totals straight from AWS Billing.
+- Estimated current-day AWS spend from Cost Explorer in the compact footer row.
 - A reconnect button for AWS SSO or an executable authentication helper selected by the user.
 - A cached last-known balance when an AWS session expires.
 
@@ -20,7 +21,7 @@ selected by the user.
 
 - BB 0.46 or newer.
 - AWS CLI v2 and a configured local profile.
-- Permission to read AWS Billing credits and call STS GetCallerIdentity.
+- Permission to read AWS Billing credits, Cost Explorer usage, and call STS GetCallerIdentity.
 - An AWS account with promotional credits; AWS Activate is supported.
 
 ## Data timing

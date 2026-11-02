@@ -10,6 +10,7 @@ It adds:
 - compact and detailed sidebar layouts, selectable in plugin settings;
 - cached balance and expiration details;
 - current-month credit allocation totals;
+- an estimated current-day AWS spend in the compact sidebar row;
 - an AWS reconnect action;
 - `bb aws-activate-usage summary|refresh|login`.
 
@@ -22,7 +23,8 @@ get-caller-identity`; users can override it with a 12-digit account ID.
 - BB 0.46 or newer.
 - AWS CLI v2 available as `aws`, or a custom CLI path in plugin settings.
 - An AWS CLI profile with permission to call `billing:GetCredits`,
-  `billing:GetCreditAllocationHistory`, and `sts:GetCallerIdentity`.
+  `billing:GetCreditAllocationHistory`, `ce:GetCostAndUsage`, and
+  `sts:GetCallerIdentity`.
 - AWS Billing access enabled for the IAM identity.
 
 ## Install from source
@@ -59,3 +61,7 @@ Open the plugin settings and choose **Sidebar display**:
 - `detailed` shows the large balance card with progress and expiration details.
 
 The full **AWS credits** page remains detailed in either mode.
+
+The amount in parentheses after the compact balance is today's estimated gross
+AWS spend from Cost Explorer. Current-day data can lag while AWS processes
+usage; **Refresh** requests the newest available estimate.
