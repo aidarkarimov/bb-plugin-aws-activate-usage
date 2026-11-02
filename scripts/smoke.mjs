@@ -6,7 +6,7 @@ const host = createFakePluginHost({ pluginId: "aws-activate-usage" });
 await plugin(host.bb);
 
 const registrations = host.harness.inspection.registrations;
-assert.deepEqual(registrations.rpcMethods.sort(), ["aws_login", "credits_summary"]);
+assert.deepEqual(registrations.rpcMethods.sort(), ["aws_login", "credits_summary", "ui_preferences"]);
 assert.equal(registrations.cli?.name, "aws-activate-usage");
 
 await host.harness.lifecycle.dispose();

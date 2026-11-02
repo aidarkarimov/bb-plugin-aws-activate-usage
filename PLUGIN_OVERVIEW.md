@@ -3,7 +3,7 @@ Keep the official AWS promotional-credit balance visible while you work in BB.
 ## What you get
 
 - An **AWS credits** page with the estimated balance, amount used, expiration dates, and each active promotional credit.
-- A compact footer card so the balance is one click away from every thread.
+- A one-row compact footer or a detailed large-balance card, selectable in plugin settings.
 - Current-month credit allocation totals straight from AWS Billing.
 - A reconnect button for AWS SSO or an executable authentication helper selected by the user.
 - A cached last-known balance when an AWS session expires.

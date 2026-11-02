@@ -7,6 +7,7 @@ It adds:
 
 - an AWS credits page;
 - an AWS Activate footer disclosure;
+- compact and detailed sidebar layouts, selectable in plugin settings;
 - cached balance and expiration details;
 - current-month credit allocation totals;
 - an AWS reconnect action;
@@ -49,3 +50,12 @@ bb aws-activate-usage login
 AWS labels current billing data as estimated and refreshes it on its own
 schedule. The plugin keeps the last successful result available when a session
 expires.
+
+## Sidebar display
+
+Open the plugin settings and choose **Sidebar display**:
+
+- `compact` keeps the current balance, remaining percentage, refresh, and reconnect actions in one row;
+- `detailed` shows the large balance card with progress and expiration details.
+
+The full **AWS credits** page remains detailed in either mode.

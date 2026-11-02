@@ -5,7 +5,11 @@ import { z } from "zod";
 
 const execFileAsync = promisify(execFile);
 const CREDITS_CHANGED = "credits-changed";
+const UI_PREFERENCES_CHANGED = "ui-preferences-changed";
 const CACHE_KEY = "latest-summary";
+
+const sidebarDisplaySchema = z.enum(["compact", "detailed"]);
+export type SidebarDisplay = z.infer<typeof sidebarDisplaySchema>;
 
 const moneySchema = z.object({
   currencyCode: z.string(),
@@ -88,6 +92,10 @@ export const rpcContract = defineRpcContract({
     input: z.object({ force: z.boolean().default(false) }),
     output: summarySchema,
   },
+  ui_preferences: {
+    input: z.null(),
+    output: z.object({ sidebarDisplay: sidebarDisplaySchema }),
+  },
   aws_login: {
     input: z.null(),
     output: z.object({ started: z.boolean(), message: z.string() }),
@@ -155,6 +163,13 @@ export default async function plugin(bb: BbPluginApi) {
       description: "Optional executable path. Leave blank to run aws sso login with the configured profile.",
       default: "",
     },
+    sidebarDisplay: {
+      type: "select",
+      label: "Sidebar display",
+      description: "Compact shows the AWS balance in one row. Detailed shows the large balance card, progress, expiry, and actions.",
+      options: ["compact", "detailed"],
+      default: "compact",
+    },
     cacheMinutes: {
       type: "number",
       label: "Refresh interval (minutes)",
@@ -165,8 +180,15 @@ export default async function plugin(bb: BbPluginApi) {
   });
 
   let config = await settings.get();
+  const sidebarDisplay = (): SidebarDisplay => {
+    const result = sidebarDisplaySchema.safeParse(config.sidebarDisplay);
+    return result.success ? result.data : "compact";
+  };
   settings.onChange((next) => {
     config = next;
+    bb.realtime.publish(UI_PREFERENCES_CHANGED, {
+      sidebarDisplay: sidebarDisplay(),
+    });
   });
 
   async function awsJson(args: string[]): Promise<unknown> {
@@ -364,6 +386,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.rpc.register(rpcContract, {
     credits_summary: ({ force }) => getSummary(force),
+    ui_preferences: async () => ({ sidebarDisplay: sidebarDisplay() }),
     aws_login: async () => startLogin(),
   });
 

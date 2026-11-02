@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { definePluginApp, useRealtime, useRpc } from "@get-bb/plugin-sdk/app";
-import type { AwsCreditsSummary, rpcContract } from "./server";
+import type { AwsCreditsSummary, rpcContract, SidebarDisplay } from "./server";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
@@ -70,6 +70,7 @@ function useCredits() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
+  const [sidebarDisplay, setSidebarDisplay] = useState<SidebarDisplay>("compact");
 
   const load = useCallback(async (force = false) => {
     setLoading(true);
@@ -89,18 +90,29 @@ function useCredits() {
     try {
       const result = await rpc.call("aws_login");
       setMessage(result.message);
-      if (!result.started) setError(result.message);
+      setError(result.started ? null : result.message);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   }, [rpc]);
 
+  const loadUiPreferences = useCallback(async () => {
+    try {
+      const result = await rpc.call("ui_preferences", null);
+      setSidebarDisplay(result.sidebarDisplay);
+    } catch {
+      setSidebarDisplay("compact");
+    }
+  }, [rpc]);
+
   useEffect(() => {
     void load(false);
-  }, [load]);
+    void loadUiPreferences();
+  }, [load, loadUiPreferences]);
   useRealtime("credits-changed", () => void load(false));
+  useRealtime("ui-preferences-changed", () => void loadUiPreferences());
 
-  return { summary, error, loading, message, load, reconnect };
+  return { summary, error, loading, message, sidebarDisplay, load, reconnect };
 }
 
 function ProgressBar({ usedPercent }: { usedPercent: number }) {
@@ -284,8 +296,92 @@ function CreditOverview({
   );
 }
 
+function CompactFooterRow({
+  summary,
+  loading,
+  message,
+  error,
+  onRefresh,
+  onReconnect,
+}: {
+  summary: AwsCreditsSummary;
+  loading: boolean;
+  message: string | null;
+  error: string | null;
+  onRefresh: () => void;
+  onReconnect: () => void;
+}) {
+  const remainingPercent = Math.max(0, Math.min(100, 100 - summary.usedPercent));
+  const visibleStatus = error !== null
+    ? "Error"
+    : message !== null
+      ? "Login…"
+      : `${Math.round(remainingPercent)}%`;
+  const status = [
+    `${usd.format(summary.estimated)} available`,
+    `${usd.format(summary.used)} used of ${usd.format(summary.initial)}`,
+    `${Math.round(remainingPercent)}% left`,
+    `Updated ${formatUpdated(summary.fetchedAt)}`,
+    summary.warning,
+    message,
+    error,
+  ].filter(Boolean).join(" · ");
+
+  return (
+    <div
+      className="flex h-9 min-w-0 items-center gap-1 border-b border-sidebar-border px-1.5 text-sidebar-foreground"
+      title={status}
+      role="group"
+      aria-label={`AWS Activate credits. ${status}`}
+    >
+      <Icon name="Cloud" aria-hidden="true" className="mx-1 size-3.5 shrink-0 text-amber-500" />
+      <span className="shrink-0 text-2xs font-medium">AWS</span>
+      <span className="min-w-0 flex-1 truncate text-xs font-semibold tabular-nums">
+        {usd.format(summary.estimated)}
+      </span>
+      <span
+        className={`shrink-0 text-2xs tabular-nums ${error !== null ? "text-destructive" : "text-muted-foreground"}`}
+        aria-live="polite"
+      >
+        {visibleStatus}
+      </span>
+      <button
+        type="button"
+        className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:opacity-50"
+        onClick={onRefresh}
+        disabled={loading}
+        aria-label={loading ? "Refreshing AWS credit balance" : "Refresh AWS credit balance"}
+        title="Refresh balance"
+      >
+        <Icon name="RotateCcw" aria-hidden="true" className={loading ? "size-3.5 animate-spin" : "size-3.5"} />
+      </button>
+      <button
+        type="button"
+        className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+        onClick={onReconnect}
+        aria-label="Reconnect AWS"
+        title="Reconnect AWS"
+      >
+        <Icon name="Link" aria-hidden="true" className="size-3.5" />
+      </button>
+    </div>
+  );
+}
+
 function FooterCredits() {
-  const { summary, error, loading, message, load, reconnect } = useCredits();
+  const { summary, error, loading, message, sidebarDisplay, load, reconnect } = useCredits();
+  if (summary !== null && sidebarDisplay === "compact") {
+    return (
+      <CompactFooterRow
+        summary={summary}
+        loading={loading}
+        message={message}
+        error={error}
+        onRefresh={() => void load(true)}
+        onReconnect={() => void reconnect()}
+      />
+    );
+  }
   return (
     <div
       className="w-full min-w-0 max-w-full overflow-hidden bg-background p-3 text-foreground"
