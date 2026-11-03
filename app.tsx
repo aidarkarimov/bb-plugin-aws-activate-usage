@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { definePluginApp, useRealtime, useRpc } from "@get-bb/plugin-sdk/app";
-import type { AwsCreditsSummary, rpcContract, SidebarDisplay } from "./server";
+import type { AwsCreditsSummary, DailySpendPeriod, rpcContract, SidebarDisplay } from "./server";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
@@ -71,6 +71,7 @@ function useCredits() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [sidebarDisplay, setSidebarDisplay] = useState<SidebarDisplay>("compact");
+  const [dailySpendPeriod, setDailySpendPeriod] = useState<DailySpendPeriod>("today");
 
   const load = useCallback(async (force = false) => {
     setLoading(true);
@@ -100,8 +101,10 @@ function useCredits() {
     try {
       const result = await rpc.call("ui_preferences", null);
       setSidebarDisplay(result.sidebarDisplay);
+      setDailySpendPeriod(result.dailySpendPeriod);
     } catch {
       setSidebarDisplay("compact");
+      setDailySpendPeriod("today");
     }
   }, [rpc]);
 
@@ -112,7 +115,7 @@ function useCredits() {
   useRealtime("credits-changed", () => void load(false));
   useRealtime("ui-preferences-changed", () => void loadUiPreferences());
 
-  return { summary, error, loading, message, sidebarDisplay, load, reconnect };
+  return { summary, error, loading, message, sidebarDisplay, dailySpendPeriod, load, reconnect };
 }
 
 function ProgressBar({ usedPercent }: { usedPercent: number }) {
@@ -301,6 +304,7 @@ function CompactFooterRow({
   loading,
   message,
   error,
+  dailySpendPeriod,
   onRefresh,
   onReconnect,
 }: {
@@ -308,10 +312,16 @@ function CompactFooterRow({
   loading: boolean;
   message: string | null;
   error: string | null;
+  dailySpendPeriod: DailySpendPeriod;
   onRefresh: () => void;
   onReconnect: () => void;
 }) {
   const remainingPercent = Math.max(0, Math.min(100, 100 - summary.usedPercent));
+  const dailySpend = dailySpendPeriod === "yesterday" ? summary.yesterdayUsed : summary.todayUsed;
+  const dailySpendIsEstimated = dailySpendPeriod === "yesterday"
+    ? summary.yesterdayIsEstimated
+    : summary.todayIsEstimated;
+  const dailySpendLabel = dailySpendPeriod === "yesterday" ? "yesterday" : "today";
   const visibleStatus = error !== null
     ? "Error"
     : message !== null
@@ -319,9 +329,9 @@ function CompactFooterRow({
       : `${Math.round(remainingPercent)}%`;
   const status = [
     `${usd.format(summary.estimated)} available`,
-    summary.todayUsed === null
-      ? "Today's spend unavailable"
-      : `${usd.format(summary.todayUsed)} spent today${summary.todayIsEstimated ? " (estimated)" : ""}`,
+    dailySpend === null
+      ? `${dailySpendLabel === "yesterday" ? "Yesterday's" : "Today's"} spend unavailable`
+      : `${usd.format(dailySpend)} spent ${dailySpendLabel}${dailySpendIsEstimated ? " (estimated)" : ""}`,
     `${usd.format(summary.used)} used of ${usd.format(summary.initial)}`,
     `${Math.round(remainingPercent)}% left`,
     `Updated ${formatUpdated(summary.fetchedAt)}`,
@@ -342,7 +352,7 @@ function CompactFooterRow({
       <div className="flex min-w-0 flex-1 items-baseline gap-1 tabular-nums">
         <span className="shrink-0 text-xs font-semibold">{usd.format(summary.estimated)}</span>
         <span className="min-w-0 truncate text-2xs font-normal text-muted-foreground">
-          ({summary.todayUsed === null ? "—" : usd.format(summary.todayUsed)} today)
+          ({dailySpend === null ? "—" : usd.format(dailySpend)} {dailySpendLabel})
         </span>
       </div>
       <span
@@ -375,7 +385,7 @@ function CompactFooterRow({
 }
 
 function FooterCredits() {
-  const { summary, error, loading, message, sidebarDisplay, load, reconnect } = useCredits();
+  const { summary, error, loading, message, sidebarDisplay, dailySpendPeriod, load, reconnect } = useCredits();
   if (summary !== null && sidebarDisplay === "compact") {
     return (
       <CompactFooterRow
@@ -383,6 +393,7 @@ function FooterCredits() {
         loading={loading}
         message={message}
         error={error}
+        dailySpendPeriod={dailySpendPeriod}
         onRefresh={() => void load(true)}
         onReconnect={() => void reconnect()}
       />

@@ -10,6 +10,8 @@ const CACHE_KEY = "latest-summary";
 
 const sidebarDisplaySchema = z.enum(["compact", "detailed"]);
 export type SidebarDisplay = z.infer<typeof sidebarDisplaySchema>;
+const dailySpendPeriodSchema = z.enum(["today", "yesterday"]);
+export type DailySpendPeriod = z.infer<typeof dailySpendPeriodSchema>;
 
 const moneySchema = z.object({
   currencyCode: z.string(),
@@ -46,6 +48,10 @@ const rawAllocationResponseSchema = z.object({
 
 const rawDailyCostResponseSchema = z.object({
   ResultsByTime: z.array(z.object({
+    TimePeriod: z.object({
+      Start: z.string(),
+      End: z.string(),
+    }),
     Total: z.record(z.string(), z.object({
       Amount: z.string(),
       Unit: z.string(),
@@ -87,6 +93,8 @@ export const summarySchema = z.object({
   usedPercent: z.number(),
   todayUsed: z.number().nullable().default(null),
   todayIsEstimated: z.boolean().default(true),
+  yesterdayUsed: z.number().nullable().default(null),
+  yesterdayIsEstimated: z.boolean().default(true),
   monthUsed: z.number(),
   month: z.string(),
   allocationIsEstimated: z.boolean(),
@@ -106,7 +114,10 @@ export const rpcContract = defineRpcContract({
   },
   ui_preferences: {
     input: z.null(),
-    output: z.object({ sidebarDisplay: sidebarDisplaySchema }),
+    output: z.object({
+      sidebarDisplay: sidebarDisplaySchema,
+      dailySpendPeriod: dailySpendPeriodSchema,
+    }),
   },
   aws_login: {
     input: z.null(),
@@ -189,6 +200,18 @@ export default async function plugin(bb: BbPluginApi) {
       options: ["compact", "detailed"],
       default: "compact",
     },
+    dailySpendPeriod: {
+      type: "select",
+      label: "Daily spend shown",
+      description: "Choose whether the compact sidebar shows today's developing estimate or yesterday's more complete total.",
+      options: ["today", "yesterday"],
+      experimental_optionLabels: {
+        today: "Today",
+        yesterday: "Yesterday",
+      },
+      experimental_schema: dailySpendPeriodSchema,
+      default: "today",
+    },
     cacheMinutes: {
       type: "number",
       label: "Refresh interval (minutes)",
@@ -203,10 +226,15 @@ export default async function plugin(bb: BbPluginApi) {
     const result = sidebarDisplaySchema.safeParse(config.sidebarDisplay);
     return result.success ? result.data : "compact";
   };
+  const dailySpendPeriod = (): DailySpendPeriod => {
+    const result = dailySpendPeriodSchema.safeParse(config.dailySpendPeriod);
+    return result.success ? result.data : "today";
+  };
   settings.onChange((next) => {
     config = next;
     bb.realtime.publish(UI_PREFERENCES_CHANGED, {
       sidebarDisplay: sidebarDisplay(),
+      dailySpendPeriod: dailySpendPeriod(),
     });
   });
 
@@ -302,15 +330,18 @@ export default async function plugin(bb: BbPluginApi) {
 
     let todayUsed: number | null = null;
     let todayIsEstimated = true;
+    let yesterdayUsed: number | null = null;
+    let yesterdayIsEstimated = true;
     let dailyCostWarning: string | null = null;
     try {
+      const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
       const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
       const dailyCost = rawDailyCostResponseSchema.parse(
         await awsJson([
           "ce",
           "get-cost-and-usage",
           "--time-period",
-          `Start=${localDate(now)},End=${localDate(tomorrow)}`,
+          `Start=${localDate(yesterday)},End=${localDate(tomorrow)}`,
           "--granularity",
           "DAILY",
           "--metrics",
@@ -332,12 +363,23 @@ export default async function plugin(bb: BbPluginApi) {
           }),
         ]),
       );
-      const result = dailyCost.ResultsByTime[0];
-      const parsedToday = Number(result?.Total.UnblendedCost?.Amount ?? "0");
+      const resultFor = (date: Date) => dailyCost.ResultsByTime.find(
+        (result) => result.TimePeriod.Start === localDate(date),
+      );
+      const todayResult = resultFor(now);
+      const yesterdayResult = resultFor(yesterday);
+      const parsedToday = todayResult === undefined
+        ? Number.NaN
+        : Number(todayResult.Total.UnblendedCost?.Amount);
+      const parsedYesterday = yesterdayResult === undefined
+        ? Number.NaN
+        : Number(yesterdayResult.Total.UnblendedCost?.Amount);
       todayUsed = Number.isFinite(parsedToday) ? Math.max(0, parsedToday) : null;
-      todayIsEstimated = result?.Estimated ?? true;
+      todayIsEstimated = todayResult?.Estimated ?? true;
+      yesterdayUsed = Number.isFinite(parsedYesterday) ? Math.max(0, parsedYesterday) : null;
+      yesterdayIsEstimated = yesterdayResult?.Estimated ?? true;
     } catch (cause) {
-      dailyCostWarning = `Today's estimated spend is unavailable: ${friendlyAwsError(cause)}`;
+      dailyCostWarning = `Daily estimated spend is unavailable: ${friendlyAwsError(cause)}`;
     }
 
     const serviceTotals = new Map<string, number>();
@@ -370,6 +412,8 @@ export default async function plugin(bb: BbPluginApi) {
       usedPercent: initial > 0 ? (used / initial) * 100 : 0,
       todayUsed,
       todayIsEstimated,
+      yesterdayUsed,
+      yesterdayIsEstimated,
       monthUsed,
       month,
       allocationIsEstimated,
@@ -438,7 +482,7 @@ export default async function plugin(bb: BbPluginApi) {
         started: true,
         message: customHelper === ""
           ? "AWS SSO login started. Confirm it in the browser, then press Refresh."
-          : "AWS reconnect helper started. Finish its login, then press Refresh.",
+          : "AWS sign-in opened. If AWS shows ‘You don’t have any projects yet’, choose Add session (not Create project), sign in to your AWS account, then press Refresh.",
       };
     } catch (cause) {
       return { started: false, message: friendlyAwsError(cause) };
@@ -447,7 +491,10 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.rpc.register(rpcContract, {
     credits_summary: ({ force }) => getSummary(force),
-    ui_preferences: async () => ({ sidebarDisplay: sidebarDisplay() }),
+    ui_preferences: async () => ({
+      sidebarDisplay: sidebarDisplay(),
+      dailySpendPeriod: dailySpendPeriod(),
+    }),
     aws_login: async () => startLogin(),
   });
 
@@ -461,10 +508,16 @@ export default async function plugin(bb: BbPluginApi) {
   function summaryText(summary: AwsCreditsSummary): string {
     const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
     const primary = summary.credits.find((credit) => credit.id === summary.primaryCreditId);
+    const selectedPeriod = dailySpendPeriod();
+    const selectedDailyUsed = selectedPeriod === "yesterday" ? summary.yesterdayUsed : summary.todayUsed;
+    const selectedDailyIsEstimated = selectedPeriod === "yesterday"
+      ? summary.yesterdayIsEstimated
+      : summary.todayIsEstimated;
+    const selectedPeriodLabel = selectedPeriod === "yesterday" ? "Yesterday" : "Today";
     return [
       `Estimated AWS credits: ${usd.format(summary.estimated)}`,
       `Used: ${usd.format(summary.used)} of ${usd.format(summary.initial)}`,
-      `Today: ${summary.todayUsed === null ? "unavailable" : usd.format(summary.todayUsed)}${summary.todayIsEstimated ? " (estimated)" : ""}`,
+      `${selectedPeriodLabel}: ${selectedDailyUsed === null ? "unavailable" : usd.format(selectedDailyUsed)}${selectedDailyIsEstimated ? " (estimated)" : ""}`,
       `This month: ${usd.format(summary.monthUsed)}${summary.allocationIsEstimated ? " (estimated)" : ""}`,
       primary?.expiresAt ? `Primary Activate credit expires: ${primary.expiresAt}` : null,
       summary.stale ? `Warning: ${summary.warning ?? "Showing cached data."}` : null,

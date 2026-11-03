@@ -10,7 +10,7 @@ It adds:
 - compact and detailed sidebar layouts, selectable in plugin settings;
 - cached balance and expiration details;
 - current-month credit allocation totals;
-- an estimated current-day AWS spend in the compact sidebar row;
+- configurable estimated spend for today or yesterday in the compact sidebar row;
 - an AWS reconnect action;
 - `bb aws-activate-usage summary|refresh|login`.
 
@@ -41,6 +41,12 @@ Open **AWS credits** in BB. The default profile is `default`. If credentials
 expire, **Reconnect AWS** runs `aws sso login --profile <profile>`. A user with
 a different authentication flow can configure an executable reconnect helper.
 
+For helpers that use `aws login`, AWS can first select an AWS Builder ID and
+show **You don't have any projects yet**. That is the Builder ID project page,
+not the AWS account. Choose **Add session** (not **Create project**), sign in to
+the intended AWS account, return to BB, and press **Refresh**. Once that account
+session exists in the browser, later reconnects can reuse it.
+
 ## Commands
 
 ```sh
@@ -62,6 +68,8 @@ Open the plugin settings and choose **Sidebar display**:
 
 The full **AWS credits** page remains detailed in either mode.
 
-The amount in parentheses after the compact balance is today's estimated gross
-AWS spend from Cost Explorer. Current-day data can lag while AWS processes
-usage; **Refresh** requests the newest available estimate.
+Use **Daily spend shown** to choose `today` (the default) or `yesterday`. The
+amount in parentheses after the compact balance is the selected day's estimated
+gross AWS spend from Cost Explorer. Current-day data can lag while AWS processes
+usage, so yesterday is useful when you want a more complete daily total;
+**Refresh** requests the newest available estimate.

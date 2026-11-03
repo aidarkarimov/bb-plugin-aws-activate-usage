@@ -5,7 +5,7 @@ Keep the official AWS promotional-credit balance visible while you work in BB.
 - An **AWS credits** page with the estimated balance, amount used, expiration dates, and each active promotional credit.
 - A one-row compact footer or a detailed large-balance card, selectable in plugin settings.
 - Current-month credit allocation totals straight from AWS Billing.
-- Estimated current-day AWS spend from Cost Explorer in the compact footer row.
+- Configurable estimated spend for today or yesterday from Cost Explorer in the compact footer row.
 - A reconnect button for AWS SSO or an executable authentication helper selected by the user.
 - A cached last-known balance when an AWS session expires.
 
@@ -16,6 +16,10 @@ AWS CLI with the configured profile and requests read-only Billing data. It
 detects the account through AWS STS unless the user supplies a 12-digit account
 ID. Reconnect uses `aws sso login` by default, or an optional executable helper
 selected by the user.
+
+When an executable helper uses `aws login`, AWS may initially select an AWS
+Builder ID and display **You don't have any projects yet**. Users should choose
+**Add session**, sign in to the intended AWS account, return to BB, and refresh.
 
 ## Requirements
 
